@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>learnDax — interactive DAX sandbox and challenges</title>
+    <link rel="stylesheet" href="./src/styles/app.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="logo">learn<span>Dax</span></div>
+        <div id="mode-badge" class="mode-badge">sandbox</div>
+        <div class="topbar-actions">
+          <button id="btn-levels" class="btn">Levels</button>
+          <button id="btn-help" class="btn">Help</button>
+          <button id="btn-reset" class="btn">Reset</button>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="panel">
+          <div class="panel-head">Model &amp; filter context</div>
+          <div class="panel-body">
+            <svg id="model-graph" viewBox="0 0 360 220" role="img" aria-label="Star schema"></svg>
+            <div id="filter-chips" class="chips"></div>
+            <div class="legend">
+              Gold = filter context · Blue = row context · Edges light along dim → fact.
+              Type <code>help</code> in the terminal.
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">Evaluation</div>
+          <div class="panel-body">
+            <div id="expr-box" class="expr-box">// enter a DAX expression below</div>
+            <div id="result-meta" class="result-meta"></div>
+            <div id="result"></div>
+          </div>
+        </section>
+      </main>
+
+      <section class="terminal">
+        <div id="term-out" class="term-out" aria-live="polite"></div>
+        <div class="term-input-row">
+          <span class="prompt">$</span>
+          <input
+            id="term-input"
+            class="term-input"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="eval SUM(Sales[Amount])   ·   levels   ·   help"
+          />
+        </div>
+      </section>
+    </div>
+
+    <div id="modal-root"></div>
+    <script type="module" src="./src/ui/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "learn-dax",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interactive DAX visualization, sandbox, and tutorial challenges",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/engine.test.js",
+    "smoke": "node tests/smoke.js",
+    "dev": "node scripts/serve.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
