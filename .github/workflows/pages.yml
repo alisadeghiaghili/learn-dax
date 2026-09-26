@@ -27,6 +27,7 @@ jobs:
           mkdir -p _site
           cp index.html _site/
           cp -r src _site/src
+          cp -r assets _site/assets
           cp README.md _site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

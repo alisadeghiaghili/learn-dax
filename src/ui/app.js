@@ -540,8 +540,65 @@ document.getElementById('btn-help')?.addEventListener('click', () => {
   term.printBlock(helpText());
   term.focus();
 });
+document.getElementById('btn-guide')?.addEventListener('click', () => {
+  term.printBlock(helpText());
+  term.print('', 'muted');
+  term.print('Guide: start with levels 1-4 (Basics), then Filter context and CALCULATE.', 'muted');
+  term.print('Watch the gold chips — that is filter context. Expanded dim columns sit on Sales.', 'muted');
+  term.focus();
+});
+document.getElementById('btn-lesson')?.addEventListener('click', () => {
+  if (!session.level) {
+    term.print('No active lesson. Open Levels and pick one.', 'muted');
+    showLevelBrowser(levels, session.progress, (lv) => beginLevel(lv));
+    return;
+  }
+  const lv = session.level;
+  showLevelIntro({
+    series: lv.series,
+    name: lv.name,
+    intro: lv.intro,
+    hint: lv.hint,
+    index: levels.indexOf(lv) + 1,
+    total: levels.length,
+    onStart: () => term.focus(),
+    onHint: () => {
+      term.print(`hint: ${lv.hint}`, 'ok');
+    },
+  });
+});
+document.getElementById('btn-hint')?.addEventListener('click', () => {
+  showHint();
+  term.focus();
+});
+document.getElementById('btn-solution')?.addEventListener('click', () => {
+  if (!session.level) {
+    term.print('No active level — solution is only available inside a lesson.', 'muted');
+    return;
+  }
+  term.print(`solution: ${session.level.hint}`, 'ok');
+  term.print('Paste it in the terminal as an expression. That is the par path.', 'muted');
+  term.focus();
+});
+document.getElementById('btn-undo')?.addEventListener('click', () => {
+  doUndo();
+  term.focus();
+});
 document.getElementById('btn-reset')?.addEventListener('click', () => {
   doReset();
+  term.focus();
+});
+document.getElementById('btn-sandbox')?.addEventListener('click', () => {
+  session.level = null;
+  session.commands = 0;
+  session.env = createEnv();
+  session.undoStack = [];
+  modeBadge.textContent = 'sandbox';
+  modeBadge.classList.remove('level');
+  refreshViz();
+  showEval('// sandbox', null, null);
+  term.print('sandbox mode — free play', 'ok');
+  term.focus();
 });
 
 banner();
