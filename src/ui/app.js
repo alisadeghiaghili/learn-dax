@@ -415,12 +415,14 @@ function beginLevel(lv) {
     series: lv.series,
     name: lv.name,
     intro: lv.intro,
+    why: lv.why,
     hint: lv.hint,
     index: levels.indexOf(lv) + 1,
     total: levels.length,
     onStart: () => {
       term.print(`— level: ${lv.name} —`, 'ok');
       term.print(lv.intro, 'muted');
+      if (lv.why) term.print(`why: ${lv.why}`, 'muted');
       term.print('Type goal to restate, hint for a nudge.', 'muted');
     },
     onHint: () => {
@@ -558,6 +560,7 @@ document.getElementById('btn-lesson')?.addEventListener('click', () => {
     series: lv.series,
     name: lv.name,
     intro: lv.intro,
+    why: lv.why,
     hint: lv.hint,
     index: levels.indexOf(lv) + 1,
     total: levels.length,

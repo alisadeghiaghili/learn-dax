@@ -31,6 +31,7 @@ export function openModal(root, content) {
  * @param {string} opts.series
  * @param {string} opts.name
  * @param {string} opts.intro
+ * @param {string} [opts.why]
  * @param {string} opts.hint
  * @param {number} opts.index
  * @param {number} opts.total
@@ -44,6 +45,7 @@ export function showLevelIntro(opts) {
     <div class="series">${escapeHtml(opts.series)} · level ${opts.index}/${opts.total}</div>
     <h2>${escapeHtml(opts.name)}</h2>
     <p>${escapeHtml(opts.intro)}</p>
+    ${opts.why ? `<p class="why"><strong>Why it matters.</strong> ${escapeHtml(opts.why)}</p>` : ''}
     <div class="hint">Goal checked on the next eval / measure submit. Hint via <code>hint</code>.</div>
     <div class="modal-actions">
       <button class="btn" data-act="hint">Hint</button>

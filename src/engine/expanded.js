@@ -62,18 +62,23 @@ export function expandTableValue(table, tableName) {
  */
 export function readExpanded(expanded, col) {
   if (col in expanded) return expanded[col];
-  try {
-    const { table, column } = parseColId(col.includes('[') ? col : `_x[${col}]`);
-    const id = colId(table, column);
-    if (id in expanded) return expanded[id];
-  } catch {
-    /* bare */
+  if (col.includes('[')) {
+    try {
+      const { table, column } = parseColId(col);
+      const id = colId(table, column);
+      if (id in expanded) return expanded[id];
+      // expanded rows may use bare column names
+      if (column in expanded) return expanded[column];
+    } catch {
+      /* fall through */
+    }
   }
-  // bare column name against expanded dim ids
-  const lower = col.toLowerCase().replace(/[\[\]]/g, '');
+  const bare = col.includes('[') ? col.slice(col.indexOf('[') + 1, -1) : col;
+  const lower = bare.toLowerCase();
+  if (lower in expanded) return expanded[lower];
   for (const k of Object.keys(expanded)) {
-    const short = k.includes('[') ? k.slice(k.indexOf('[') + 1, -1).toLowerCase() : k.toLowerCase();
-    if (short === lower) return expanded[k];
+    const short = k.includes('[') ? k.slice(k.indexOf('[') + 1, -1) : k;
+    if (short.toLowerCase() === lower) return expanded[k];
   }
   return undefined;
 }

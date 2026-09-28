@@ -172,11 +172,18 @@ function evalColumnRef(name, env) {
   const c = getColumn(t.name, column);
   const id = colId(t.name, c.name);
 
+  // Expanded table: dim column readable from a fact row context.
+  const hit = lookupRowColumn(env.rowContexts, id);
+  if (hit.hit) return scalar(inferType(hit.value), hit.value);
+
   for (let i = env.rowContexts.length - 1; i >= 0; i -= 1) {
     const frame = env.rowContexts[i];
     if (frame.table.toLowerCase() !== t.name.toLowerCase()) continue;
     if (c.name in frame.row) {
       return scalar(inferType(frame.row[c.name]), frame.row[c.name]);
+    }
+    if (id in frame.row) {
+      return scalar(inferType(frame.row[id]), frame.row[id]);
     }
   }
 
@@ -437,6 +444,33 @@ function evalCall(ast, env) {
 
     case 'GENERATESERIES':
       return evalGenerateSeries(args, env);
+
+    case 'RANKX':
+      return evalRankX(args, env);
+
+    case 'REMOVEFILTERS':
+      return evalRemoveFilters(args, env);
+
+    case 'TREATAS':
+      return evalTreatAs(args, env);
+
+    case 'GENERATE':
+    case 'GENERATEALL':
+      return evalGenerate(args, env);
+
+    case 'SAMPLE':
+      return evalSample(args, env);
+
+    case 'GROUPBY':
+      return evalGroupBy(args, env);
+
+    case 'DATESYTD':
+    case 'DATESMTD':
+    case 'DATESQTD':
+      return evalDatesPeriod(name, args, env);
+
+    case 'LOOKUPVALUE':
+      return evalLookupValue(args, env);
 
     case 'RELATED':
       return evalRelated(args, env);
@@ -786,6 +820,247 @@ function evalGenerateSeries(args, env) {
   return { kind: 'table', columns: ['Value'], rows };
 }
 
+/**
+ * @param {any[]} args
+ * @param {Env} env
+ */
+function evalRemoveFilters(args, env) {
+  if (!args.length) {
+    return { kind: 'table', columns: [], rows: [], __all: true, __allTables: true };
+  }
+  /** @type {Record<string, unknown>[]} */
+  const markers = [];
+  for (const arg of args) {
+    if (arg.type === 'Name') {
+      const t = getTable(arg.name);
+      for (const c of t.columns) {
+        markers.push({ col: colId(t.name, c.name) });
+      }
+    } else if (arg.type === 'ColumnRef') {
+      markers.push({ col: canonicalCol(arg.name) });
+    }
+  }
+  return {
+    kind: 'table',
+    columns: [],
+    rows: [],
+    __removeFilters: true,
+    __cols: markers.map((m) => m.col),
+  };
+}
+
+/**
+ * @param {any[]} args
+ * @param {Env} env
+ */
+function evalTreatAs(args, env) {
+  const src = evaluate(args[0], env);
+  expectTable(src);
+  const srcCol = src.columns[0];
+  const values = src.rows.map((r) => r[srcCol]);
+  /** @type {string[]} */
+  const targets = [];
+  for (let i = 1; i < args.length; i += 1) {
+    if (args[i].type !== 'ColumnRef') {
+      throw new DaxEvalError('TREATAS targets must be column references');
+    }
+    targets.push(canonicalCol(args[i].name));
+  }
+  return {
+    kind: 'table',
+    columns: targets,
+    rows: values.map((v) => {
+      /** @type {Record<string, unknown>} */
+      const o = {};
+      for (const t of targets) o[t] = v;
+      return o;
+    }),
+    __treatas: true,
+  };
+}
+
+/**
+ * @param {any[]} args
+ * @param {Env} env
+ */
+function evalRankX(args, env) {
+  const table = evaluate(args[0], env);
+  expectTable(table);
+  const exprAst = args[1];
+  const orderDesc = args[3] ? toJsBool(evaluate(args[3], env)) : true;
+
+  const scored = table.rows.map((row, idx) => {
+    const frame = resolveFrame(table, row, env);
+    const v = toNumber(evaluate(exprAst, { ...env, rowContexts: [...env.rowContexts, frame] }));
+    return { value: v === null ? -Infinity : v, idx };
+  });
+  scored.sort((a, b) => (orderDesc ? b.value - a.value : a.value - b.value));
+
+  const current = args[2] ? toNumber(evaluate(args[2], env)) : toNumber(evaluate(exprAst, env));
+  if (current === null) return blank();
+
+  let rank = 0;
+  let seen = 0;
+  let prev = null;
+  for (const s of scored) {
+    seen += 1;
+    if (prev === null || s.value !== prev) {
+      rank = seen;
+      prev = s.value;
+    }
+    if (s.value === current) return scalar('number', rank);
+  }
+  return scalar('number', scored.length + 1);
+}
+
+/**
+ * @param {any[]} args
+ * @param {Env} env
+ */
+function evalGenerate(args, env) {
+  const a = evaluate(args[0], env);
+  expectTable(a);
+  const columns = [...a.columns];
+  /** @type {Record<string, unknown>[]} */
+  const rows = [];
+  for (const ra of a.rows) {
+    const frame = resolveFrame(a, ra, env);
+    const b = evaluate(args[1], { ...env, rowContexts: [...env.rowContexts, frame] });
+    expectTable(b);
+    for (const c of b.columns) if (!columns.includes(c)) columns.push(c);
+    if (!b.rows.length) rows.push({ ...ra });
+    else for (const rb of b.rows) rows.push({ ...ra, ...rb });
+  }
+  return { kind: 'table', columns, rows };
+}
+
+function evalSample(args, env) {
+  const n = toNumber(evaluate(args[0], env)) ?? 0;
+  const table = evaluate(args[1], env);
+  expectTable(table);
+  return { kind: 'table', columns: table.columns, rows: table.rows.slice(0, Math.max(0, n)) };
+}
+
+function evalGroupBy(args, env) {
+  const table = evaluate(args[0], env);
+  expectTable(table);
+  /** @type {string[]} */
+  const groupCols = [];
+  /** @type {{ name: string, ast: any }[]} */
+  const ext = [];
+  for (let i = 1; i < args.length; i += 1) {
+    const a = args[i];
+    if (a.type === 'ColumnRef') groupCols.push(a.name);
+    else if (a.type === 'String' || a.type === 'Name') {
+      ext.push({ name: a.type === 'String' ? a.value : a.name, ast: args[i + 1] });
+      i += 1;
+    }
+  }
+  const keys = groupCols.map((gc) => {
+    const short = gc.includes('[') ? gc.slice(gc.indexOf('[') + 1, -1) : gc;
+    return tableColumn(table, short);
+  });
+  /** @type {Map<string, { row: Record<string, unknown>, members: Record<string, unknown>[] }>} */
+  const groups = new Map();
+  for (const row of table.rows) {
+    const k = keys.map((key) => scalarKey(row[key])).join('||');
+    if (!groups.has(k)) {
+      /** @type {Record<string, unknown>} */
+      const g = {};
+      groupCols.forEach((col, idx) => {
+        g[col] = row[keys[idx]];
+      });
+      groups.set(k, { row: g, members: [row] });
+    } else groups.get(k).members.push(row);
+  }
+  const columns = [...groupCols, ...ext.map((e) => e.name)];
+  const rows = [...groups.values()].map(({ row, members }) => {
+    const o = { ...row };
+    for (const p of ext) {
+      // CURRENTGROUP-style: evaluate over member rows as a table expression
+      const local = {
+        ...env,
+        rowContexts: [
+          ...env.rowContexts,
+          resolveFrame(table, members[0], env),
+        ],
+      };
+      // Prefer aggregating over the group via SUMX if the expr is an aggregate —
+      // for teaching we evaluate in the first member context (LIMITATION noted).
+      o[p.name] = toRaw(evaluate(p.ast, local));
+    }
+    return o;
+  });
+  return { kind: 'table', columns, rows };
+}
+
+/**
+ * @param {string} name
+ * @param {any[]} args
+ * @param {Env} env
+ */
+function evalDatesPeriod(name, args, env) {
+  // DATESYTD(dates) / DATESMTD(dates) / DATESQTD(dates)
+  const dates = args[0]
+    ? evaluate(args[0], env)
+    : modelTableValue((t) => filterTableRows(env.filterContext, t), 'Calendar');
+  expectTable(dates);
+  const key = dates.columns[0];
+  const vals = dates.rows.map((r) => r[key]).filter((d) => typeof d === 'string');
+  if (!vals.length) return singleColumnTable(key, []);
+  const maxDate = vals.reduce((a, b) => (a > b ? a : b));
+  const [y, m] = String(maxDate).split('-').map(Number);
+  const grain = name.endsWith('MTD') ? 'MTD' : name.endsWith('QTD') ? 'QTD' : 'YTD';
+  const filtered = vals.filter((d) => {
+    const [dy, dm] = String(d).split('-').map(Number);
+    if (dy !== y) return false;
+    if (grain === 'YTD') return true;
+    if (grain === 'MTD') return dm === m;
+    return Math.ceil(dm / 3) === Math.ceil(m / 3);
+  });
+  return singleColumnTable(key, filtered);
+}
+
+/**
+ * @param {any[]} args
+ * @param {Env} env
+ */
+function evalLookupValue(args, env) {
+  const resultCol = args[0];
+  if (resultCol.type !== 'ColumnRef') {
+    throw new DaxEvalError('LOOKUPVALUE result must be a column reference');
+  }
+  const { table, column } = parseColId(resultCol.name);
+  const t = getTable(table);
+  const c = getColumn(table, column);
+  /** @type {{ col: string, value: unknown }[]} */
+  const predicates = [];
+  for (let i = 1; i + 1 < args.length; i += 2) {
+    if (args[i].type !== 'ColumnRef') break;
+    predicates.push({
+      col: args[i].name,
+      value: toRaw(evaluate(args[i + 1], env)),
+    });
+    if (i + 2 < args.length && args[i + 2].type === 'ColumnRef') {
+      // alternate form
+    }
+  }
+  const hits = t.rows.filter((row) => {
+    for (const p of predicates) {
+      try {
+        const pc = parseColId(p.col);
+        if (scalarKey(row[pc.column]) !== scalarKey(p.value)) return false;
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  });
+  if (hits.length === 1) return scalar(inferType(hits[0][c.name]), hits[0][c.name]);
+  if (!hits.length) return blank();
+  return blank();
+}
+
 function evalRelated(args, env) {
   const arg = args[0];
   if (arg.type !== 'ColumnRef') {
@@ -982,6 +1257,13 @@ function applyFilterArg(fAst, outer, base) {
 
   expectTable(val);
   if (val.__all) return { filters, keep, clearAll: true };
+
+  if (val.__removeFilters && val.__cols) {
+    for (const col of val.__cols) {
+      filters.filters.set(col, { op: 'all', values: [] });
+    }
+    return { filters, keep, clearAll };
+  }
 
   for (const col of val.columns) {
     if (!col.includes('[')) continue;

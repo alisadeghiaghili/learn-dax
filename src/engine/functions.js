@@ -6,7 +6,8 @@
  * is handled in the evaluator.
  */
 
-import { getTable, colId, getColumn } from '../data/model.js';
+import { getTable, colId, getColumn, manySideRelationships } from '../data/model.js';
+import { expandRow } from './expanded.js';
 import {
   filterTableRows,
   scalarKey,
@@ -133,16 +134,18 @@ export function tableColumn(t, colName) {
 export function modelTableValue(filterRows, tableName) {
   const t = getTable(tableName);
   const rows = filterRows(t.name);
+  /** @type {string[]} */
   const columns = t.columns.map((c) => colId(t.name, c.name));
-  /** @type {Record<string, unknown>[]} */
-  const projected = rows.map((r) => {
-    /** @type {Record<string, unknown>} */
-    const o = {};
-    for (const c of t.columns) {
-      o[colId(t.name, c.name)] = r[c.name];
+  if (t.role === 'fact') {
+    for (const rel of manySideRelationships(t.name)) {
+      const dim = getTable(rel.toTable);
+      for (const c of dim.columns) {
+        const id = colId(dim.name, c.name);
+        if (!columns.includes(id)) columns.push(id);
+      }
     }
-    return o;
-  });
+  }
+  const projected = rows.map((r) => expandRow(t.name, r));
   return { kind: 'table', columns, rows: projected };
 }
 

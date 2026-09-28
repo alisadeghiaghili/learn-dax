@@ -417,6 +417,13 @@ table.grid td.num {
   line-height: 1.55;
 }
 
+.modal p.why {
+  color: var(--muted);
+  font-size: 13px;
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+}
+
 .modal .hint {
   margin-top: 12px;
   padding: 10px;

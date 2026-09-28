@@ -157,3 +157,45 @@ test('TOTALYTD', () => {
 test('quantity weighted', () => {
   assert.equal(num('SUMX(Sales, Sales[Quantity] * Sales[Amount])'), 26410);
 });
+
+test('expanded table filter without RELATED', () => {
+  assert.equal(
+    num('SUMX(FILTER(Sales, Products[Category] = "Bikes"), Sales[Amount])'),
+    17440,
+  );
+});
+
+test('REMOVEFILTERS Customer', () => {
+  assert.equal(num('CALCULATE(SUM(Sales[Amount]), REMOVEFILTERS(Customer))'), 18310);
+});
+
+test('TREATAS bridge', () => {
+  assert.equal(
+    num('CALCULATE(SUM(Sales[Amount]), TREATAS({"Bikes"}, Products[Category]))'),
+    17440,
+  );
+});
+
+test('DATESYTD filter', () => {
+  assert.equal(num('CALCULATE(SUM(Sales[Amount]), DATESYTD(Calendar[Date]))'), 15610);
+});
+
+test('DATESMTD filter', () => {
+  assert.equal(num('CALCULATE(SUM(Sales[Amount]), DATESMTD(Calendar[Date]))'), 1830);
+});
+
+test('LOOKUPVALUE', () => {
+  assert.equal(num('LOOKUPVALUE(Products[Price], Products[ProductKey], 1)'), 1000);
+});
+
+test('ALLEXCEPT keeps category filter', () => {
+  const env = createEnv();
+  setFilter(env.filterContext, colId('Products', 'Category'), 'in', ['Bikes']);
+  assert.equal(num('CALCULATE(COUNTROWS(Products), ALLEXCEPT(Products, Products[Category]))', env), 3);
+});
+
+test('dim column filter on Products', () => {
+  const env = createEnv();
+  setFilter(env.filterContext, colId('Products', 'Category'), 'in', ['Bikes']);
+  assert.equal(num('COUNTROWS(Products)', env), 3);
+});
